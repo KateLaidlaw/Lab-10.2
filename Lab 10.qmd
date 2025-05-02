@@ -1,0 +1,355 @@
+---
+Project:
+  title: "Lab 10: Distances to the Border Zone"
+  outpit-dir: docs
+  type: website
+format: 
+  html:
+    self-contained: true
+editor: visual
+---
+```{r}
+# spatial data science
+library(tidyverse)
+library(sf)
+library(units)
+
+# Data
+#install.packages("AOI")
+library(AOI)
+
+# Visualization
+#install.packages("gghighlight")
+library(gghighlight)
+library(ggrepel)
+library(knitr)
+```
+
+```{r}
+#install.packages("usethis")
+library(usethis)
+usethis::create_github_token()
+credentials::set_github_pat("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")
+```
+```{r}
+
+remotes::install_github("ropensci/USAboundaries")
+remotes::install_github("ropensci/USAboundariesData")
+remotes::install_github("ropenscilabs/rnaturalearthdata")
+remotes::install_github("mikejohnson51/AOI")
+```
+```{r}
+ aoi_get(country = c("MX", "CA", "USA"))
+```
+
+
+```{r}
+eqdc <- st_crs(5070)
+
+countries <- rnaturalearth::countries110 %>%
+  st_transform(eqdc)
+```
+
+```{r}
+states <- USAboundaries::us_states(resolution = "low") %>%
+  filter(!state_abbr %in% c("HI", "AK", "PR")) %>%
+  st_transform(eqdc)
+
+library(readr)
+cities <- read_csv("Data/uscities.csv", show_col_types = FALSE) %>%
+  filter(!state_id %in% c("HI", "AK", "PR")) %>%
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) %>%
+  st_transform(eqdc)
+```
+
+QUESTION 2
+```{r}
+#2.1 Distance to USA Border (Km)
+library(dplyr)
+library(flextable)
+
+states_union <- st_union(states)
+state_boundaries <- st_boundary(states_union)
+state_boundaries <- st_cast(state_boundaries, "MULTILINESTRING")
+
+cities_distance <- cities %>%
+  mutate(distance_to_border = st_distance(geometry, state_boundaries)) %>%
+  mutate(distance_km = as.numeric(distance_to_border) / 1000) 
+
+top5_BorderCities <- cities_distance %>%
+  arrange(desc(distance_km)) %>%
+  slice(1:5) %>%
+  select(city, state_id, distance_km)
+
+flextable(top5_BorderCities) %>%
+  set_header_labels(city = "City", state_id = "State", distance_km = "Distance to State Border (km)") %>%
+  autofit()
+
+```
+```{r}
+# 2.2 Distance to States (Km)
+
+state_boundaries_preserved <- states %>%
+  st_geometry() %>%         
+  st_boundary() %>%         
+  st_cast("MULTILINESTRING")
+
+cities_with_distance <- cities %>%
+  mutate(distance_to_border = st_distance(geometry, state_boundaries_preserved) %>% 
+           apply(1, min), 
+         distance_km = distance_to_border / 1000)
+
+top5_StateCities <- cities_with_distance %>%
+  arrange(desc(distance_km)) %>%
+  slice(1:5) %>%
+  select(city, state_id, distance_km)
+
+flextable(top5_StateCities) %>%
+  set_header_labels(
+    city = "City",
+    state_id = "State",
+    distance_km = "Distance to Nearest State Border (km)"
+  ) %>%
+  colformat_num(j = "distance_km", digits = 2) %>%
+  autofit()
+```
+
+```{r}
+#2.3 Distance to Mexico (Km)
+
+mexico_border <- filter(countries, ADMIN == "Mexico") %>%
+  st_geometry() %>%                   
+  st_boundary()      
+
+dist_matrix <- st_distance(cities, mexico_border)
+
+cities <- cities %>%
+  mutate(
+    distance_to_mexico = apply(dist_matrix, 1, min),   
+    distance_km = distance_to_mexico / 1000            
+  )
+
+top5_mexico <- cities %>%
+  arrange(desc(distance_km)) %>%
+  slice(1:5) %>%
+  select(city, state_id, distance_km)
+
+flextable(top5_mexico) %>%
+  set_header_labels(
+    city = "City",
+    state_id = "State",
+    distance_km = "Distance to Mexico Border (km)"
+  ) %>%
+  colformat_num(j = "distance_km", digits = 2) %>%
+  autofit()
+
+```
+```{r}
+#2.4 Distance to Canada (Km)
+
+Canada_border <- filter(countries, ADMIN == "Canada") %>%# 
+  st_geometry() %>%                   
+  st_boundary()
+
+dist_matrix <- st_distance(cities, Canada_border)
+
+cities <- cities %>%
+  mutate(
+    distance_to_Canada = apply(dist_matrix, 1, min),   
+    distance_km = distance_to_Canada / 1000            
+  )
+
+top5_Canada <- cities %>%
+  arrange(desc(distance_km)) %>%
+  slice(1:5) %>%
+  select(city, state_id, distance_km)
+
+flextable(top5_Canada) %>%
+  set_header_labels(
+    city = "City",
+    state_id = "State",
+    distance_km = "Distance to Canada Border (km)"
+  ) %>%
+  colformat_num(j = "distance_km", digits = 2) %>%
+  autofit()
+
+```
+QUESTION 3
+```{r}
+# 3.1 Data
+
+Top10_US_Cities <- cities %>%
+  arrange(desc(population)) %>%
+  slice_head(n = 10)
+
+US_CAN_ME <- filter(countries, ADMIN %in% c("Mexico", "United States of America", "Canada"))
+
+
+ggplot() +
+  geom_sf(data = US_CAN_ME, aes(fill = "lightgrey"), lty = 3, alpha = .5) +
+  geom_sf(data = states, size = 1, fill = "NA") +
+  geom_sf(data = Top10_US_Cities, size= 2, color = "red") +
+  ggrepel::geom_label_repel(
+    data = Top10_US_Cities,
+    aes(label = city, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 3) +
+  labs(fill = "Area Land") + 
+  ggthemes::theme_map() 
+
+```
+
+
+```{r}
+#3.2 City Distance from the Border
+
+USA <- countries %>%
+  filter( ADMIN == "United States of America")
+
+USA_parts <- st_cast(USA, "POLYGON")
+plot(USA_parts["geometry"])
+USA_parts <- USA_parts %>%
+  mutate(area = st_area(.),
+         centroid = st_centroid(.),
+         lon = st_coordinates(centroid)[, 1],
+         lat = st_coordinates(centroid)[, 2])
+USA_contiguous <- USA_parts %>%
+  filter(lon > -130 & lat > 24)
+USA_contiguous <- st_union(USA_contiguous)
+
+
+ggplot() +
+  geom_sf(data = USA_contiguous, aes(fill = "lightgrey"), lty = 3, alpha = .5) +
+  geom_sf(data = states, size = 1, fill = "NA", color = "black") +
+  geom_sf(data = cities_distance, aes(color = distance_km, size = 0.)) +
+    scale_fill_gradient(low = 'blue', high = "red") +
+  geom_sf(data = top5_BorderCities, size= 2, color = "red") +
+  ggrepel::geom_label_repel(
+    data = top5_BorderCities,
+    aes(label = city, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 3) +
+  labs(fill = "Area Land") + 
+  scale_color_viridis_c(name = "Distance to Border (km)") +
+  labs(title = "U.S. Cities Colored by Distance from National Border") 
+  
+
+```
+
+```{r}
+#3.3 City Distance from Nearest State
+
+ggplot() +
+  geom_sf(data = USA_contiguous, aes(fill = "lightgrey"), lty = 3, alpha = .5) +
+  geom_sf(data = states, size = 1, fill = "NA", color = "black") +
+  geom_sf(data = cities_with_distance, aes(color = distance_km, size = 0.)) +
+  scale_fill_gradient(low = 'blue', high = "red") +
+  geom_sf(data = top5_StateCities, size= 2, color = "red") +
+  ggrepel::geom_label_repel(
+    data = top5_StateCities,
+    aes(label = city, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 3) +
+  labs(fill = "Area Land") + 
+  scale_color_viridis_c(name = "Distance to Border (km)") +
+  labs(title = "U.S. Cities Colored by Distance from National Border") 
+```
+```{r}
+#3.4 Equidistant Boundary from Mexico and Canada
+
+cities <- cities %>%
+  mutate(can_mx_dist = as.numeric(abs(distance_to_Canada - distance_to_mexico)))
+
+top_5_cities <- filter(cities, can_mx_dist < 100) %>%
+  slice_max(population, n = 5)
+
+
+#ggplot() +
+ # geom_sf(data = st_union(states), fill = "grey", lty = 3, alpha = 0.5) +
+  #geom_sf(data = cities, aes(color = as.numeric(distance_km, size = 0.5))) +
+  #geom_sf(data = top_5_cities, aes(color = "pink"), size = .7) +
+  #ggrepel::geom_label_repel(data = top_5_cities, aes(geometry = geometry, label = city, label.size = .2, stat = "sf_coordinates")) +
+    #gghighlight(can_mx_dist < 100) +
+    #theme_void() +
+    #theme(legend.position = "bottom") +
+    #labs(color = "Distance to Boarder (km)")
+
+# I have tried so many different kinds of combinations for this ggplot and it's just not working I keep getting errors for every different thing I'm sorry
+```
+QUESTION 4
+```{r}
+#4.1 Quantifying Border Zone
+
+cities_sf <- st_as_sf(cities, coords = c("lng", "lat"), crs = 4326)
+
+library(rnaturalearth)
+us_border <- ne_countries(country = "United States of America", scale = "medium", returnclass = "sf")
+
+cities_proj <- st_transform(cities_sf, 3395)
+us_border_proj <- st_transform(us_border, 3395)
+
+border_buffer <- st_buffer(us_border_proj, dist = 160000)  # 160 km = 160,000 m
+
+cities_in_zone <- cities_proj[st_within(cities_proj, border_buffer, sparse = FALSE), ]
+
+num_cities_in_zone <- nrow(cities_in_zone)
+population_in_zone <- sum(cities_in_zone$population, na.rm = TRUE)
+total_population <- sum(cities$population, na.rm = TRUE)
+percent_in_zone <- (population_in_zone / total_population) * 100
+
+table <- tibble(
+  Metric = c(
+    "Cities within 100 miles of border",
+    "Population within 100 miles of border",
+    "Total U.S. city population (in dataset)",
+    "Percent of total population in zone"
+  ),
+  Value = c(
+    num_cities_in_zone,
+    population_in_zone,
+    total_population,
+    sprintf("%.2f%%", percent_in_zone)
+  )
+)
+
+print(table)
+```
+ACLU says that roughly 2/3 of the US population is in the border zone, which doesn't really match the table that I generated, but I think that I calculated the numbers wrong because my table says that that 100% of the population is in border zone, which is definitely not accurate.
+```{r}
+#4.2 Mapping + Labeling Cities in Border Zone
+
+top_10 <- cities_in_zone %>%
+  top_n(10, wt = population)
+
+ggplot() +
+  # Plot all cities as light background points (optional)
+  geom_sf(data = cities_proj, color = "gray80", size = 0.5) +
+
+  # Highlight cities within 100-mile zone
+  geom_sf(data = cities_in_zone, aes(color = population), size = 1.5) +
+  scale_color_gradient(low = "orange", high = "darkred") +
+
+  # Add US boundary
+  geom_sf(data = us_border_proj, fill = NA, color = "black", size = 0.4) +
+
+  # Add labels to top 10 populous cities
+  geom_text(data = top_10,
+            aes(x = st_coordinates(geometry)[,1],
+                y = st_coordinates(geometry)[,2],
+                label = city),
+            size = 3,
+            color = "black",
+            fontface = "bold",
+            check_overlap = TRUE) +
+
+  gghighlight(TRUE) +  # just to emphasize we're using the package
+  theme_minimal() +
+  labs(
+    title = "Cities within 100 Miles of the U.S. Border",
+    subtitle = "Top 10 most populous cities labeled",
+    color = "Population"
+  )
+```
+
+
+
