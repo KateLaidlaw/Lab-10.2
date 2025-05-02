@@ -27,16 +27,16 @@ library(knitr)
 
 ```{r}
 #install.packages("usethis")
-library(usethis)
-usethis::create_github_token()
-credentials::set_github_pat("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")
+#library(usethis)
+#usethis::create_github_token()
+#credentials::set_github_pat("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")
 ```
 ```{r}
 
-remotes::install_github("ropensci/USAboundaries")
-remotes::install_github("ropensci/USAboundariesData")
-remotes::install_github("ropenscilabs/rnaturalearthdata")
-remotes::install_github("mikejohnson51/AOI")
+#remotes::install_github("ropensci/USAboundaries")
+#remotes::install_github("ropensci/USAboundariesData")
+#remotes::install_github("ropenscilabs/rnaturalearthdata")
+#remotes::install_github("mikejohnson51/AOI")
 ```
 ```{r}
  aoi_get(country = c("MX", "CA", "USA"))
