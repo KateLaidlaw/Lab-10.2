@@ -1,0 +1,145 @@
+---
+title: "Assignment27"
+format: 
+  html:
+    self-contained: true
+editor: visual
+---
+
+Define River Object
+```{r}
+#1.
+
+#install.packages("osmdata")
+library(osmdata)
+library(sf)
+library(raster)
+library(terra)
+
+fc <- AOI::geocode("Fort Collins", bbox = TRUE) |> 
+  st_transform(5070)
+
+
+FC_Rivers <- osmdata::opq(st_bbox(st_transform(fc,4326))) |> 
+  add_osm_feature("waterway") |> 
+  osmdata_sf()
+```
+
+
+```{r}
+#2. 
+
+library(dplyr)
+
+osm_lines <- FC_Rivers$osm_lines
+
+Poudre_Lines <- osm_lines |> 
+  filter(name == "Cache la Poudre River")
+
+Poudre_Union <- st_union(Poudre_Lines)
+
+Poudre_sf <- st_as_sf(data.frame(geometry = Poudre_Union), crs = st_crs(Poudre_Lines))  
+```
+
+```{r}
+#3. 
+
+river_length_m <- st_length(Poudre_sf)
+```
+
+
+```{r}
+#4. 
+
+poudre_pts <- st_cast(Poudre_sf, "POINT")
+```
+
+
+Define EDM Object
+```{r}
+#5. 
+
+dem <- rast('https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/refs/heads/main/resources/foco-elev-cm.tif')
+```
+
+Extract River Profile
+```{r}
+#6.
+
+river_points <- as.points(dem, values = TRUE)
+elevation_values <- extract(dem, river_points)
+```
+
+```{r}
+#7.
+
+river_df <- as.data.frame(river_points)
+result <- bind_cols(river_df, elevation_values[,-1])
+```
+
+
+```{r}
+#8. 
+
+result <- result |>
+  mutate(ID = seq_len(n()))
+```
+
+
+Compute Sinuosity
+```{r}
+#9 and 10.
+
+river_sf <- st_as_sf(river_points)
+first_point <- river_sf[1, ]
+last_point  <- river_sf[nrow(river_sf), ]
+distance <- st_distance(first_point, last_point)
+print(distance)
+
+sinuosity = river_length_m/distance
+```
+The Sinuosity value of this function is 6.12. This is very high for a river, considerably deviating from a straight line. However, given the windiness of the Poudre, this value makes sense. 
+
+Compute Slope
+```{r}
+#11.
+
+elev_inlet  <- result$dem[1] / 100
+elev_outlet <- result$dem[nrow(result)] / 100
+slope <- (elev_inlet - elev_outlet) / river_length_m
+print(slope)
+```
+The slope of the Poudre is rougly .0009m, or .09% slope.
+
+Map Profile: 2 Ways
+```{r}
+#12.
+library(ggplot2)
+
+ggplot(result, aes(x = ID, y = dem)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkred", size = 2) +
+  labs(
+    title = "Elevation Profile Along the Poudre",
+    x = "Point ID (From Inlet to Outlet)",
+    y = "Elevation (cm)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#13.
+
+ggplot(river_sf) +
+  geom_sf(aes(color = dem), size = 2) + 
+  scale_color_viridis_c(name = "Elevation (cm)", option = "plasma") +
+  labs(
+    title = "Spatial River Profile",
+    subtitle = "Poudre points colored from high to low elevation",
+  ) +
+  theme_minimal()
+```
+
+
+
+
